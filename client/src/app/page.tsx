@@ -391,7 +391,7 @@ export default function Home() {
                         <CardContent className="p-5">
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex flex-1 items-start gap-4">
-                              <div className="from-primary/20 to-primary/10 ring-primary/20 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br shadow-sm ring-1 transition-all group-hover:scale-105">
+                              <div className="from-primary/20 to-primary/10 ring-primary/20 flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br shadow-sm ring-1 transition-all group-hover:scale-105">
                                 <span className="text-primary text-xl font-bold">
                                   {user.name.charAt(0).toUpperCase()}
                                 </span>

@@ -1,0 +1,29 @@
+# version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bun_drizzle
+    ports:
+      - "5434:5432"
+    networks:
+      - fastapi-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - fastapi-network
+
+networks:
+  fastapi-network:

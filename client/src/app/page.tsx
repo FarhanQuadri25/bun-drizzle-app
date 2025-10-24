@@ -22,10 +22,16 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { useTheme } from "next-themes";
 import {
-  Moon,
-  Sun,
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import {
   UserPlus,
   Users,
   Loader2,
@@ -34,19 +40,13 @@ import {
   X,
   Mail,
   Calendar,
+  AlertTriangle,
+  School2Icon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { API_URL } from "@/constants/url";
+import Link from "next/link";
 
 type User = {
   id: number;
@@ -57,8 +57,6 @@ type User = {
 
 type UsersResponse = { success: boolean; data: User[] };
 type CreateUserResponse = { success: boolean; data: User; message: string };
-
-const API_URL = "http://localhost:4000";
 
 const userFormSchema = z.object({
   name: z
@@ -76,13 +74,10 @@ type UserFormValues = z.infer<typeof userFormSchema>;
 
 export default function Home() {
   const queryClient = useQueryClient();
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
-  const [isAlertOpen, setIsAlertOpen] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const [isDeleteDrawerOpen, setIsDeleteDrawerOpen] = useState(false);
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
@@ -140,9 +135,12 @@ export default function Home() {
       queryClient.setQueryData<User[]>(["users"], (old = []) =>
         old.filter((u) => u.id !== id),
       );
+      setIsDeleteDrawerOpen(false);
+      setDeleteUserId(null);
     },
     onError: () => {
       toast.error("Failed to delete user");
+      setIsDeleteDrawerOpen(false);
     },
   });
 
@@ -159,24 +157,22 @@ export default function Home() {
     setEditingUserId(null);
   };
 
-  const openDeleteDialog = (id: number) => {
+  const openDeleteDrawer = (id: number) => {
     setDeleteUserId(id);
-    setIsAlertOpen(true);
+    setIsDeleteDrawerOpen(true);
   };
 
   const confirmDelete = () => {
     if (deleteUserId) {
       deleteMutation.mutate(deleteUserId);
     }
-    setIsAlertOpen(false);
-    setDeleteUserId(null);
   };
 
-  if (!mounted) return null;
+  const userToDelete = users?.find((u) => u.id === deleteUserId);
 
   return (
     <div className="from-background via-background to-muted/10 min-h-screen bg-linear-to-br">
-      <div className="container mx-auto max-w-7xl px-4 py-8">
+      <div className="container mx-auto max-w-7xl px-4">
         {/* Header */}
         <div className="mb-10 flex items-center justify-between">
           <div className="space-y-2">
@@ -187,19 +183,13 @@ export default function Home() {
               Create, update, and manage user accounts efficiently
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="h-11 w-11 rounded-full border-2 shadow-sm transition-all hover:scale-105"
-          >
-            {theme === "dark" ? (
-              <Sun className="h-5 w-5" />
-            ) : (
-              <Moon className="h-5 w-5" />
-            )}
-            <span className="sr-only">Toggle theme</span>
-          </Button>
+          <div>
+            <Button asChild variant="outline">
+              <Link href="/class-student" className="flex items-center gap-2">
+                <School2Icon size={12} /> Student
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-5">
@@ -382,9 +372,9 @@ export default function Home() {
                     {users.map((user) => (
                       <Card
                         key={user.id}
-                        className={`group bg-background/60 border-border/50 shadow-sm backdrop-blur-sm transition-all duration-200 hover:shadow-lg ${
+                        className={`group border-border/50 bg-background/60 shadow-sm backdrop-blur-sm transition-all duration-200 hover:shadow-lg ${
                           editingUserId === user.id
-                            ? "ring-primary/50 border-primary/50 ring-2"
+                            ? "border-primary/50 ring-primary/50 ring-2"
                             : "hover:border-primary/30"
                         }`}
                       >
@@ -428,7 +418,7 @@ export default function Home() {
                               <Button
                                 variant="outline"
                                 size="icon"
-                                onClick={() => openDeleteDialog(user.id)}
+                                onClick={() => openDeleteDrawer(user.id)}
                                 className="h-9 w-9 border-red-200 text-red-600 shadow-sm transition-all hover:scale-105 hover:border-red-400 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-950/50"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -465,33 +455,59 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
-        <AlertDialogContent className="border-border/50 bg-card/95 shadow-2xl backdrop-blur-xl">
-          <AlertDialogHeader>
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/30">
-              <Trash2 className="h-7 w-7 text-red-600 dark:text-red-400" />
-            </div>
-            <AlertDialogTitle className="text-center text-2xl">
-              Delete User?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-center text-base">
-              This action cannot be undone. The user will be permanently removed
-              from the system.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel className="flex-1">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="flex-1 bg-red-600 text-white shadow-lg hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete User
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Delete Confirmation Drawer */}
+      <Drawer open={isDeleteDrawerOpen} onOpenChange={setIsDeleteDrawerOpen}>
+        <DrawerContent>
+          <div className="mx-auto w-full max-w-xl">
+            <DrawerHeader>
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/30">
+                <AlertTriangle className="h-7 w-7 text-red-600 dark:text-red-400" />
+              </div>
+              <DrawerTitle className="text-center text-2xl">
+                Delete User?
+              </DrawerTitle>
+              <DrawerDescription className="text-center">
+                {userToDelete ? (
+                  <>
+                    Are you sure you want to delete{" "}
+                    <span className="text-foreground font-semibold">
+                      {userToDelete.name}
+                    </span>
+                    ? This action cannot be undone and will permanently remove
+                    this user from the system.
+                  </>
+                ) : (
+                  "This action cannot be undone."
+                )}
+              </DrawerDescription>
+            </DrawerHeader>
+            <DrawerFooter className="pt-4">
+              <Button
+                onClick={confirmDelete}
+                disabled={deleteMutation.isPending}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete User
+                  </>
+                )}
+              </Button>
+              <DrawerClose asChild>
+                <Button variant="outline" disabled={deleteMutation.isPending}>
+                  Cancel
+                </Button>
+              </DrawerClose>
+            </DrawerFooter>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

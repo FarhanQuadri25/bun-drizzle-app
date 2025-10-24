@@ -5,8 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1761227087372,
-      "tag": "0000_talented_warlock",
+      "when": 1761313274877,
+      "tag": "0000_brief_speed_demon",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1761322155184,
+      "tag": "0001_wealthy_storm",
       "breakpoints": true
     }
   ]

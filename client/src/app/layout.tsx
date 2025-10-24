@@ -4,6 +4,7 @@ import "./globals.css";
 import ReactQueryProvider from "./query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
+import ThemeToggle from "@/components/theme-toggle";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -30,6 +31,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <ReactQueryProvider>
+            <ThemeToggle/>
             {children}
             <Toaster
               position="bottom-right"

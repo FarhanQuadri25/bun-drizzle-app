@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ky from "ky";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import {
   Edit,
   X,
   Save,
+  GripVertical,
+  RefreshCw,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,9 +33,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { API_URL } from "@/constants/url";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // Types
 type Student = { id: number; name: string; age: number };
@@ -59,6 +77,158 @@ type Allotment = {
 
 type ApiResponse<T> = { success: boolean; data: T[] };
 
+// Sortable Row Component for Allotment Table
+function SortableAllotmentRow({
+  allotment,
+  editingAllotment,
+  newClassId,
+  newSectionId,
+  classes,
+  sections,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onRemove,
+  onClassChange,
+  onSectionChange,
+  updateAllotmentMutation,
+  deleteAllotmentMutation,
+}: {
+  allotment: Allotment;
+  editingAllotment: number | null;
+  newClassId: number | null;
+  newSectionId: number | null;
+  classes: ClassType[];
+  sections: SectionType[];
+  onStartEdit: (allotment: Allotment) => void;
+  onCancelEdit: () => void;
+  onSaveEdit: (allotmentId: number) => void;
+  onRemove: (allotmentId: number) => void;
+  onClassChange: (classId: number) => void;
+  onSectionChange: (sectionId: number) => void;
+  updateAllotmentMutation: any;
+  deleteAllotmentMutation: any;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: allotment.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <GripVertical
+            className="h-4 w-4 cursor-grab text-gray-400 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          />
+          <span className="font-mono text-sm">{allotment.studentId}</span>
+        </div>
+      </TableCell>
+      <TableCell className="font-medium">{allotment.studentName}</TableCell>
+      <TableCell>{allotment.studentAge}</TableCell>
+      <TableCell>
+        {editingAllotment === allotment.id ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="w-full">
+                {classes.find((c) => c.id === newClassId)?.name ||
+                  "Select Class"}
+                <ChevronDown size={14} className="ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {classes.map((cls) => (
+                <DropdownMenuItem
+                  key={cls.id}
+                  onClick={() => onClassChange(cls.id)}
+                >
+                  {cls.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          allotment.className
+        )}
+      </TableCell>
+      <TableCell>
+        {editingAllotment === allotment.id ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="w-full">
+                {sections.find((s) => s.id === newSectionId)?.name ||
+                  "Select Section"}
+                <ChevronDown size={14} className="ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {sections.map((section) => (
+                <DropdownMenuItem
+                  key={section.id}
+                  onClick={() => onSectionChange(section.id)}
+                >
+                  {section.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          allotment.sectionName
+        )}
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          {editingAllotment === allotment.id ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onSaveEdit(allotment.id)}
+                disabled={updateAllotmentMutation.isPending}
+              >
+                <Save size={14} />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onCancelEdit}>
+                <X size={14} />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onStartEdit(allotment)}
+              >
+                <Edit size={14} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onRemove(allotment.id)}
+                disabled={deleteAllotmentMutation.isPending}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function StudentAllotment() {
   const queryClient = useQueryClient();
   const [isPending, startTransition] = useTransition();
@@ -71,6 +241,9 @@ export default function StudentAllotment() {
   const [editingAllotment, setEditingAllotment] = useState<number | null>(null);
   const [newClassId, setNewClassId] = useState<number | null>(null);
   const [newSectionId, setNewSectionId] = useState<number | null>(null);
+  const [activeAllotment, setActiveAllotment] = useState<Allotment | null>(
+    null,
+  );
 
   // Queries
   const { data: students } = useQuery<ApiResponse<Student>>({
@@ -99,12 +272,24 @@ export default function StudentAllotment() {
       ky.get(`${API_URL}/api/allotments`).json<ApiResponse<Allotment>>(),
   });
 
-  // Get current class-section allotments
-  const currentAllotments = allotments?.data.filter(
-    (allotment) =>
-      allotment.classId === selectedClass?.id &&
-      allotment.sectionId === selectedSection?.id,
-  );
+  // Get current class-section allotments (sortable state)
+  const [sortedAllotments, setSortedAllotments] = useState<Allotment[]>([]);
+
+  // Update sorted allotments when data changes or filters change
+  const currentAllotments =
+    allotments?.data.filter(
+      (allotment) =>
+        allotment.classId === selectedClass?.id &&
+        allotment.sectionId === selectedSection?.id,
+    ) || [];
+
+  // Update sortedAllotments when currentAllotments change
+  useState(() => {
+    setSortedAllotments(currentAllotments);
+  });
+
+  // Check if there are filters applied
+  const hasFilters = selectedClass !== null || selectedSection !== null;
 
   // Mutations
   const createAllotmentMutation = useMutation({
@@ -215,7 +400,16 @@ export default function StudentAllotment() {
     },
   });
 
-  // Drag handlers
+  // DnD Sensors for sortable
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+  );
+
+  // Drag handlers for student to allotment
   const handleDragStart = (e: React.DragEvent, student: Student) => {
     setDraggedStudent(student);
     e.dataTransfer.effectAllowed = "move";
@@ -236,6 +430,26 @@ export default function StudentAllotment() {
       setAllottedStudents([...allottedStudents, draggedStudent]);
     }
     setDraggedStudent(null);
+  };
+
+  // Sortable handlers for allotment reordering
+  const handleSortableDragStart = (event: DragStartEvent) => {
+    const allotment = sortedAllotments.find((a) => a.id === event.active.id);
+    setActiveAllotment(allotment || null);
+  };
+
+  const handleSortableDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveAllotment(null);
+
+    if (active.id !== over?.id) {
+      setSortedAllotments((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over?.id);
+
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
   };
 
   // Actions
@@ -292,6 +506,19 @@ export default function StudentAllotment() {
     });
   };
 
+  const handleRefreshFilters = () => {
+    setSelectedClass(null);
+    setSelectedSection(null);
+    setAllottedStudents([]);
+    setSortedAllotments(allotments?.data || []);
+    toast.success("Filters cleared");
+  };
+
+  // Update sortedAllotments when currentAllotments change
+  useEffect(() => {
+    setSortedAllotments(currentAllotments);
+  }, [currentAllotments.length, selectedClass?.id, selectedSection?.id]);
+
   const isSelectionValid = selectedClass && selectedSection;
 
   return (
@@ -311,7 +538,6 @@ export default function StudentAllotment() {
             </Link>
           </Button>
         </div>
-
         {/* Selection Panel */}
         <div className="bg-card rounded-xl border p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">Selection</h2>
@@ -373,6 +599,18 @@ export default function StudentAllotment() {
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* Refresh Button */}
+            {hasFilters && (
+              <Button
+                onClick={handleRefreshFilters}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <RefreshCw size={16} />
+                Clear Filters
+              </Button>
+            )}
+
             <div className="flex-1" />
 
             <Button
@@ -398,16 +636,7 @@ export default function StudentAllotment() {
               Clear All
             </Button>
           </div>
-
-          {/* {!isSelectionValid && (
-            <Alert className="mt-4">
-              <AlertDescription>
-                Please select both class and section to begin allotting students
-              </AlertDescription>
-            </Alert>
-          )} */}
         </div>
-
         {/* Tables Grid */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Available Students */}
@@ -492,7 +721,7 @@ export default function StudentAllotment() {
             </div>
           </div>
 
-          {/* Allotment Zone */}
+          {/* Allotment Zone with Sortable */}
           <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
             <div className="bg-muted/50 border-b px-6 py-4">
               <h2 className="text-lg font-semibold">
@@ -502,205 +731,141 @@ export default function StudentAllotment() {
               <p className="text-muted-foreground mt-1 text-sm">
                 {allottedStudents.length} student
                 {allottedStudents.length !== 1 ? "s" : ""} ready to allot
-                {currentAllotments &&
-                  currentAllotments.length > 0 &&
-                  ` • ${currentAllotments.length} already allotted`}
+                {sortedAllotments &&
+                  sortedAllotments.length > 0 &&
+                  ` • ${sortedAllotments.length} already allotted (drag to reorder)`}
               </p>
             </div>
             <div
               className={`max-h-[600px] min-h-[400px] overflow-auto transition-colors ${
                 allottedStudents.length === 0 &&
-                (!currentAllotments || currentAllotments.length === 0)
+                (!sortedAllotments || sortedAllotments.length === 0)
                   ? "bg-muted/20"
                   : ""
               }`}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
             >
-              <Table>
-                <TableHeader className="bg-muted/50 sticky top-0">
-                  <TableRow>
-                    <TableHead className="w-[80px]">ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="w-[80px]">Age</TableHead>
-                    <TableHead className="w-[150px]">Class</TableHead>
-                    <TableHead className="w-[150px]">Section</TableHead>
-                    <TableHead className="w-[120px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {/* New students to be allotted */}
-                  {allottedStudents.map((student) => (
-                    <TableRow
-                      key={`new-${student.id}`}
-                      className="bg-blue-50/50"
-                    >
-                      <TableCell className="font-mono text-sm">
-                        {student.id}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {student.name}
-                      </TableCell>
-                      <TableCell>{student.age}</TableCell>
-                      <TableCell>
-                        <span className="font-medium text-green-600">
-                          {selectedClass?.name}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-medium text-green-600">
-                          {selectedSection?.name}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveStudent(student)}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      </TableCell>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleSortableDragStart}
+                onDragEnd={handleSortableDragEnd}
+              >
+                <Table>
+                  <TableHeader className="bg-muted/50 sticky top-0">
+                    <TableRow>
+                      <TableHead className="w-[80px]">ID</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="w-[80px]">Age</TableHead>
+                      <TableHead className="w-[150px]">Class</TableHead>
+                      <TableHead className="w-[150px]">Section</TableHead>
+                      <TableHead className="w-[120px]">Actions</TableHead>
                     </TableRow>
-                  ))}
-
-                  {/* Existing allotted students */}
-                  {currentAllotments?.map((allotment) => (
-                    <TableRow key={allotment.id}>
-                      <TableCell className="font-mono text-sm">
-                        {allotment.studentId}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {allotment.studentName}
-                      </TableCell>
-                      <TableCell>{allotment.studentAge}</TableCell>
-                      <TableCell>
-                        {editingAllotment === allotment.id ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full"
-                              >
-                                {classes?.data.find((c) => c.id === newClassId)
-                                  ?.name || "Select Class"}
-                                <ChevronDown size={14} className="ml-2" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              {classes?.data.map((cls) => (
-                                <DropdownMenuItem
-                                  key={cls.id}
-                                  onClick={() => setNewClassId(cls.id)}
-                                >
-                                  {cls.name}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : (
-                          allotment.className
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {editingAllotment === allotment.id ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full"
-                              >
-                                {sections?.data.find(
-                                  (s) => s.id === newSectionId,
-                                )?.name || "Select Section"}
-                                <ChevronDown size={14} className="ml-2" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              {sections?.data.map((section) => (
-                                <DropdownMenuItem
-                                  key={section.id}
-                                  onClick={() => setNewSectionId(section.id)}
-                                >
-                                  {section.name}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : (
-                          allotment.sectionName
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {editingAllotment === allotment.id ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSaveEdit(allotment.id)}
-                                disabled={updateAllotmentMutation.isPending}
-                              >
-                                <Save size={14} />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleCancelEdit}
-                              >
-                                <X size={14} />
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleStartEdit(allotment)}
-                              >
-                                <Edit size={14} />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  handleRemoveAllottedStudent(allotment.id)
-                                }
-                                disabled={deleteAllotmentMutation.isPending}
-                              >
-                                <Trash2 size={14} />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-
-                  {allottedStudents.length === 0 &&
-                    (!currentAllotments || currentAllotments.length === 0) && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="py-24">
-                          <div className="text-muted-foreground flex flex-col items-center gap-3">
-                            <Users size={48} className="opacity-50" />
-                            <p className="text-lg font-medium">
-                              Drop students here
-                            </p>
-                            <p className="text-sm">or use the Add buttons</p>
-                          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {/* New students to be allotted */}
+                    {allottedStudents.map((student) => (
+                      <TableRow
+                        key={`new-${student.id}`}
+                        className="bg-blue-50/50"
+                      >
+                        <TableCell className="font-mono text-sm">
+                          {student.id}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {student.name}
+                        </TableCell>
+                        <TableCell>{student.age}</TableCell>
+                        <TableCell>
+                          <span className="font-medium text-green-600">
+                            {selectedClass?.name}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-medium text-green-600">
+                            {selectedSection?.name}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveStudent(student)}
+                          >
+                            <Trash2 size={16} />
+                          </Button>
                         </TableCell>
                       </TableRow>
-                    )}
-                </TableBody>
-              </Table>
+                    ))}
+
+                    {/* Existing allotted students - Sortable */}
+                    <SortableContext
+                      items={sortedAllotments.map((a) => a.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {sortedAllotments.map((allotment) => (
+                        <SortableAllotmentRow
+                          key={allotment.id}
+                          allotment={allotment}
+                          editingAllotment={editingAllotment}
+                          newClassId={newClassId}
+                          newSectionId={newSectionId}
+                          classes={classes?.data || []}
+                          sections={sections?.data || []}
+                          onStartEdit={handleStartEdit}
+                          onCancelEdit={handleCancelEdit}
+                          onSaveEdit={handleSaveEdit}
+                          onRemove={handleRemoveAllottedStudent}
+                          onClassChange={setNewClassId}
+                          onSectionChange={setNewSectionId}
+                          updateAllotmentMutation={updateAllotmentMutation}
+                          deleteAllotmentMutation={deleteAllotmentMutation}
+                        />
+                      ))}
+                    </SortableContext>
+
+                    {allottedStudents.length === 0 &&
+                      (!sortedAllotments || sortedAllotments.length === 0) && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="py-24">
+                            <div className="text-muted-foreground flex flex-col items-center gap-3">
+                              <Users size={48} className="opacity-50" />
+                              <p className="text-lg font-medium">
+                                Drop students here
+                              </p>
+                              <p className="text-sm">or use the Add buttons</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                  </TableBody>
+                </Table>
+
+                {/* Drag Overlay for Sortable */}
+                <DragOverlay>
+                  {activeAllotment ? (
+                    <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 text-gray-400" />
+                        <span className="font-medium">
+                          {activeAllotment.studentName}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {activeAllotment.className} -{" "}
+                          {activeAllotment.sectionName}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
             </div>
           </div>
         </div>
-
         {/* Current Allotments Summary */}
-        {/* <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
+
+        <div className="bg-card overflow-hidden rounded-xl border shadow-sm">
           <div className="bg-muted/50 border-b px-6 py-4">
             <h2 className="text-lg font-semibold">All Allotments Summary</h2>
             <p className="text-muted-foreground mt-1 text-sm">
@@ -780,8 +945,18 @@ export default function StudentAllotment() {
               </div>
             )}
           </div>
-        </div> */}
+        </div>
       </div>
     </div>
   );
+}
+
+{
+  /* {!isSelectionValid && (
+            <Alert className="mt-4">
+              <AlertDescription>
+                Please select both class and section to begin allotting students
+              </AlertDescription>
+            </Alert>
+          )} */
 }
